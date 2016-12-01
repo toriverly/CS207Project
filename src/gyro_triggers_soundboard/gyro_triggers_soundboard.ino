@@ -1,122 +1,150 @@
 /*
-Make Projects
- Arduino Wii Motion Plus Data Reader
- This code is used for the Make Projects: Wii Motion Plus on the Arduino.
- Miles code did not include a license however we would like to thank him for posting it!
- 
- Author:  Miles Moody
- Home Page:
- http://randomhacksofboredom.blogspot.com/2009/07/motion-plus-and-nunchuck-together-on.html
+ * CS207 Project
+ * Victoria Verlysdonk
+ * 2000301751
+ * 
+ * Nov 30 2016
+ * 
+ * Arduino controls a soundboard trigger with SOUND_BOARD_PIN when JERK_THRESHOLD is read from
+ * the gyroscope chip from the Wii Motion Plus.
+ * 
+ * The soundboard is connected with a 4066BE IC with the switch control on SOUND_BOARD_PIN
  */
 
 #include <Wire.h>
 
-byte data[6];          //six data bytes
-int yaw, pitch, roll;  //three axes
-int yaw0, pitch0, roll0;  //calibration zeroes
 const int SOUNDBOARD_PIN = 13;
-int lastRoll = 0;
-double lastV = 0;
-double lastA = 0;
+const double JERK_THRESHOLD = 0.50;
 
-void wmpOn(){
-  Wire.beginTransmission(0x53);    //WM+ starts out deactivated at address 0x53
-  Wire.write(0xfe);                 //send 0x04 to address 0xFE to activate WM+
-  Wire.write(0x04);
-  Wire.endTransmission();          //WM+ jumps to address 0x52 and is now active
-}
+const int WMP_DEACTIVATED = 0x53; // address for wii motion plus when deactivated
+const int WMP_ACTIVATED = 0x52;   // address for wii motion plus when activated
 
-void wmpSendZero(){
-  Wire.beginTransmission(0x52);    //now at address 0x52
-  Wire.write(0x00);                 //send zero to signal we want info
-  Wire.endTransmission();
-}
+// initial axes calibration zeroes
+int yaw0 = 0, pitch0 = 0, roll0 = 0;
 
-void calibrateZeroes(){
-  for (int i=0;i<10;i++){
-    wmpSendZero();
-    Wire.requestFrom(0x52,6);
-    for (int i=0;i<6;i++){
-      data[i]=Wire.read();
-    }
-    yaw0+=(((data[3]>>2)<<8)+data[0])/10;        //average 10 readings for each zero
-    pitch0+=(((data[4]>>2)<<8)+data[1])/10;
-    roll0+=(((data[5]>>2)<<8)+data[2])/10;
-  }
-  Serial.print("Yaw0:");
-  Serial.print(yaw0);
-  Serial.print("  Pitch0:");
-  Serial.print(pitch0);
-  Serial.print("  Roll0:");
-  Serial.println(roll0);
-}
-
-void receiveData(){
-  wmpSendZero();                   //send zero before each request (same as nunchuck)
-  Wire.requestFrom(0x52,6);        //request the six bytes from the WM+
-  for (int i=0;i<6;i++){
-    data[i]=Wire.read();
-  }
-  yaw=((data[3]>>2)<<8)+data[0]-yaw0;        //see http://wiibrew.org/wiki/Wiimote/Extension_Controllers#Wii_Motion_Plus
-  pitch=((data[4]>>2)<<8)+data[1]-pitch0;    //for info on what each byte represents
-  roll=((data[5]>>2)<<8)+data[2]-roll0;      
-}
+// current axes data
+int yaw = 0, pitch = 0, roll = 0;
 
 void setup(){
-  pinMode(SOUNDBOARD_PIN, OUTPUT);
-  digitalWrite(SOUNDBOARD_PIN, HIGH);
-  delay(100);
-  digitalWrite(SOUNDBOARD_PIN, LOW);
   Serial.begin(9600);
   Wire.begin();
   wmpOn();                        //turn WM+ on
   calibrateZeroes();              //calibrate zeroes
+
+  // play a sound on start up
+  pinMode(SOUNDBOARD_PIN, OUTPUT);
+  digitalWrite(SOUNDBOARD_PIN, HIGH);
+  delay(100);
+  digitalWrite(SOUNDBOARD_PIN, LOW);
+  
   delay(1000);
-//  digitalWrite(BLADE_PIN, HIGH);
 }
 
 void loop(){
-  receiveData();                  //receive data and calculate yaw pitch and roll
-//  Serial.print("yaw:");           //see diagram on randomhacksofboredom.blogspot.com
-//  Serial.print(yaw);              //for info on which axis is which
-//  Serial.print("  pitch:");
-//  Serial.print(pitch);
+  // loop delay in ms
+  static const int DELAY_TIME = 100;
+  
+  // previous WM + data
+  static int lastYaw = 0, lastPitch = 0, lastRoll = 0;
+  static double lastYawVelocity = 0.0, lastPitchVelocity = 0.0, lastRollVelocity = 0.0;
+  static double lastYawAcceleration= 0.0, lastPitchAcceleration = 0.0, lastRollAcceleration = 0.0;
+  
+  // receive updated WM+ data
+  calculateWmpData();
 
+  // calculate jerk
+  double yawVelocity = double(yaw - lastYaw) / DELAY_TIME;
+  double yawAcceleration = double(yawVelocity - lastYawVelocity) / DELAY_TIME;
+  double yawJerk = lastYawAcceleration - yawAcceleration;
 
-  double v = double(roll - lastRoll) / 100.0;
-  double a = double(v - lastV) / 100.0;
-    Serial.print(" a:");
-  Serial.println(a);
-    Serial.print(" lastA:");
-  Serial.println(lastA);
+  double pitchVelocity = double(pitch - lastPitch) / DELAY_TIME;
+  double pitchAcceleration = double(pitchVelocity - lastPitchVelocity) / DELAY_TIME;
+  double pitchJerk = lastPitchAcceleration - pitchAcceleration;
 
-  if(abs(lastA - a) > 0.50) { // significant acceleration change
+  double rollVelocity = double(roll - lastRoll) / DELAY_TIME;
+  double rollAcceleration = double(rollVelocity - lastRollVelocity) / DELAY_TIME;
+  double rollJerk = lastRollAcceleration - rollAcceleration;
+  
+  // activate sound on significant jerk
+  if(abs(yawJerk) > JERK_THRESHOLD
+  || abs(pitchJerk) > JERK_THRESHOLD
+  || abs(rollJerk) > JERK_THRESHOLD) {
     digitalWrite(SOUNDBOARD_PIN, HIGH);
   }
-  delay(100);
+  delay(DELAY_TIME);
+
+  // reset sound trigger to low
   digitalWrite(SOUNDBOARD_PIN, LOW);
 
+  // update previous values
+  lastYaw = yaw;
+  lastYawVelocity = yawVelocity;
+  lastYawAcceleration = yawAcceleration;
+
+  lastPitch = pitch;
+  lastPitchVelocity = pitchVelocity;
+  lastPitchAcceleration = pitchAcceleration;
+
   lastRoll = roll;
-  lastV = v;
-  lastA = a;
+  lastRollVelocity = rollVelocity;
+  lastRollAcceleration = rollAcceleration;
 } 
 
-
-
-
-
-
 /*
-Additional Reading:
- The wii motion plus's initialization sequence was pull from here:
- http://wiibrew.org/wiki/Wiimote/Extension_Controllers#Wii_Motion_Plus
- 
- The data format is well documented here:
- http://wiibrew.org/wiki/Wiimote/Extension_Controllers#Data_Format_.28Wii_Motion_Plus.29
- 
- More pinout diagrams can be found here:
- http://wiibrew.org/wiki/Wiimote/Extension_Controllers#Hardware_.28Wii_Motion_Plus.29
+ * The following are slightly modified from Miles Moody's
+ * http://randomhacksofboredom.blogspot.com/2009/07/motion-plus-and-nunchuck-together-on.html
  */
 
+void wmpOn(){
+  Wire.beginTransmission(WMP_DEACTIVATED);
+  Wire.write(0xfe);                // activate WM+
+  Wire.write(0x04);
+  Wire.endTransmission();
+}
 
+void wmpSendZero(){
+  Wire.beginTransmission(WMP_ACTIVATED);
+  Wire.write(0x00);                //send zero to signal we want info
+  Wire.endTransmission();
+}
+
+void calibrateZeroes(){
+  byte data[6];
+  // average 10 readings for each zero
+  for (int i=0;i<10;i++){
+    receiveData(data);
+    yaw0 += decodedWmpData(data, 0) / 10;
+    pitch0 += decodedWmpData(data, 1) / 10;
+    roll0 += decodedWmpData(data, 2) / 10;
+  }
+}
+
+void calculateWmpData(){
+  byte data[6];
+  receiveData(data);
+  yaw = decodedWmpData(data, 0) - yaw0;
+  pitch = decodedWmpData(data, 1) - pitch0;
+  roll = decodedWmpData(data, 2) - roll0;      
+}
+
+/**
+ * recieve 6 bytes of data from data from the WM+
+ */
+void receiveData(byte data[6]) {
+  // send zero before each request
+  wmpSendZero();
+  // request the six bytes from the WM+
+  Wire.requestFrom(WMP_ACTIVATED, 6);
+  for (int i = 0; i < 6; i++){
+    data[i] = Wire.read();
+  }
+}
+
+/**
+ * shifts bits for WM+ data as per Moody's decoding example
+ * baseIndex is expected to be [0, 2]
+**/
+int decodedWmpData(byte data[6], int baseIndex) {
+  return ((data[baseIndex + 3]>>2)<<8)+data[baseIndex];
+}
 
