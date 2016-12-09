@@ -28,6 +28,7 @@ Bill of Materials:
 
 * 2 x 560 ohm resistor
 * 1 x toggle switch
+* 1 x CMOS quad analog switch (https://www.digchip.com/datasheets/parts/datasheet/397/SCL4066BE-pdf.php)
 * 1 x battery holder
 * 1 x breadboard (rails removed)
 * 1 x Ardweeny
@@ -53,9 +54,27 @@ Bill of Materials:
 Build Instructions
 ==================
 
-Here is where you give specific instructions about how the device is built. The more detail the better -- especially if your build is very complicated. Here you should include schematics of your build: 
+The Ardweeny needs to be soldered and assembled as per the instructions that come with it.
 
-If there are any special instructions on how to assemble the hardware, we should note it here as well. For example, if the user should solder things in a specific order, you should give them a heads-up.
+The housing (toy) needs to be dismantled. In my case, the blade comes off and the hilt pulls apart with some elbow grease and leverage from a screwdriver. I also drilled holes in the bottom cap of the hilt and used an exacto knife to wittle away plastic from the switch hole (because my switch was really big).
+
+We removed the push button switch from the sound module, connecting those wires to the CMOS quad switch instead (pins 8 and 9). The button batteries are removed and a ground and Vin wire should be soldered in their place, to connect to the Ardweeny.
+
+The control pin for the CMOS quad switch connects to the Ardweeny on pin 13.
+
+The Wii MotionPlus is easy to take apart (provided you have a triwing screwdriver). We only need the pcb board containing the gyroscope, as pictured. There are some excellent instructions here:
+
+http://makezine.com/projects/hacking-the-wii-motionplus-to-talk-to-the-arduino/
+
+that illustrate which pins are 3V, GND, SDA and SCL. Note that the gyroscope cannot be connected to +5V!
+
+The LED strings are connected directly to the power supply as they are not to be controlled by any programming on the Ardweeny. All other components receive current through the 3.3V pin on the Ardweeny.
+
+The following illustrates the basic setup. Note that the diagram shows an Arduino Uno, a 4.5V battery pack, and a single LED, but the actual hardware is an Ardweeny, 6V battery pack and a string of LEDs.
+
+![alt text][breadboard]
+
+[breadboard]: https://github.com/toriverly/CS207Project/blob/master/img/project_bb.png "breadboard"
 
 Firmware Installation
 =====================
